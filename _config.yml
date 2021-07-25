@@ -39,6 +39,7 @@ domain: blog.cadumillani.com.br       # if you want to force HTTPS, specify the 
 url: "https://blog.cadumillani.com.br" # the base hostname & protocol for your site, e.g. http://example.com
 twitter_username: cadumillani
 github_username:  cmillani
+linkedin_username:  cemillani
 
 # Build settings
 theme: minima

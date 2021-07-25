@@ -1,4 +1,103 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.9.0">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2021-07-25T14:21:55-03:00</updated><id>http://localhost:4000/feed.xml</id><title type="html">Carlos Millani</title><subtitle>My name is Carlos, I&apos;m a software engineer and this is a place where I&apos;ll share some of my thought and experiments  on computer science. Some academic stuff, other hobby and tinkering projects, and enterprise insights.</subtitle><entry><title type="html">so, I’m creating a blog</title><link href="http://localhost:4000/kubernetes/2021/07/18/hello-world.html" rel="alternate" type="text/html" title="so, I’m creating a blog" /><published>2021-07-18T19:05:00-03:00</published><updated>2021-07-18T19:05:00-03:00</updated><id>http://localhost:4000/kubernetes/2021/07/18/hello-world</id><content type="html" xml:base="http://localhost:4000/kubernetes/2021/07/18/hello-world.html">&lt;p&gt;For a while now I wanted a place where I could share some of my experiments and studies.&lt;/p&gt;
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.9.0">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2021-07-25T16:50:25-03:00</updated><id>http://localhost:4000/feed.xml</id><title type="html">Carlos Millani</title><subtitle>My name is Carlos, I&apos;m a software engineer and this is a place where I&apos;ll share some of my thought and experiments  on computer science. Some academic stuff, other hobby and tinkering projects, and enterprise insights.</subtitle><entry><title type="html">setting up Let’s Encrypt on my private kuberntes cluster</title><link href="http://localhost:4000/personal/2021/07/18/lets-encrypt-on-k8s.html" rel="alternate" type="text/html" title="setting up Let’s Encrypt on my private kuberntes cluster" /><published>2021-07-18T19:07:00-03:00</published><updated>2021-07-18T19:07:00-03:00</updated><id>http://localhost:4000/personal/2021/07/18/lets-encrypt-on-k8s</id><content type="html" xml:base="http://localhost:4000/personal/2021/07/18/lets-encrypt-on-k8s.html">&lt;p&gt;I’ve been using self signed certificates for a while, but safari started complaining about them with no simple option to simply trust the certificated as I had before. So, I decided to work on something I’ve been postponing for a while: using let’s encrypt to generate trusted certificates.&lt;/p&gt;
+
+&lt;p&gt;With an instance of &lt;a href=&quot;https://cert-manager.io/docs/&quot;&gt;cert-manager&lt;/a&gt; running, things were pretty straight-forward. With some annotations on the &lt;a href=&quot;https://kubernetes.io/docs/concepts/services-networking/ingress/&quot;&gt;ingress&lt;/a&gt; definition, and some configurations about how &lt;em&gt;cert-manager&lt;/em&gt; should generate the certificate, everything - generating, renewing ans using certificates - is done automatically.&lt;/p&gt;
+
+&lt;p&gt;For my cluster, I’m using an &lt;a href=&quot;https://kubernetes.github.io/ingress-nginx/&quot;&gt;Nginx Ingress Controller&lt;/a&gt;, but I found no restriction about the chosen controller, so others should work too.&lt;/p&gt;
+
+&lt;h1 id=&quot;cert-manager-resources&quot;&gt;Cert-Manager resources&lt;/h1&gt;
+
+&lt;p&gt;Cert manager supports a bunch of different strategies to issue certificates. Before, I was using the &lt;a href=&quot;https://cert-manager.io/docs/configuration/selfsigned/&quot;&gt;self signed&lt;/a&gt;, my goal now was to implement &lt;a href=&quot;https://cert-manager.io/docs/configuration/acme/&quot;&gt;ACME&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;&lt;em&gt;ACME&lt;/em&gt; is a protocol provides a way to automate certificate generation, given a challenge can be fulfilled. There are currently two kinds of challenge:&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;HTTP01 - Where to prove that you own the subdomain you should be able to serve a certain file from your server&lt;/li&gt;
+  &lt;li&gt;DNS01 - Here a TXT record is created in your DNS server&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Let’s Encrypt and Cart-Manager both have good documentation on ACME and its challenges, so let’s focus on the implementation.&lt;/p&gt;
+
+&lt;p&gt;The HTTP challenge would not be possible, since my servers are not exposed and thus Let’s Encrypt servers would not be able to reach them to verify the file, so we needed to use the DNS one. &lt;a href=&quot;https://cert-manager.io/docs/configuration/acme/dns01/#supported-dns01-providers&quot;&gt;There is a page&lt;/a&gt; with supported DNS providers, anything outside that list does not mean it would be impossible, but it would require more work, for example, using a &lt;a href=&quot;https://cert-manager.io/docs/configuration/acme/dns01/#supported-dns01-providers&quot;&gt;webhook&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;I choose to migrate my DNS to cloudflare since it is free and supported (note, I have no association with them), so I just needed to create two resources:&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;A &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Secret&lt;/code&gt; to hold my &lt;em&gt;API-TOKEN&lt;/em&gt;&lt;/li&gt;
+  &lt;li&gt;A &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ClusterIssuer&lt;/code&gt; to listen to requests and generate certificates to my ingresses&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Since I want every namespace to be able to issue a certificate, I used a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ClusterIssuer&lt;/code&gt;, not just an &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Issuer&lt;/code&gt;.&lt;/p&gt;
+
+&lt;figure class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;language-yaml&quot; data-lang=&quot;yaml&quot;&gt;&lt;span class=&quot;na&quot;&gt;apiVersion&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;v1&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;kind&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Secret&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;metadata&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;cloudflare-api-token-secret&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;type&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Opaque&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;stringData&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;api-token&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&amp;lt;Your-Token&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nn&quot;&gt;---&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;apiVersion&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;cert-manager.io/v1&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;kind&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;ClusterIssuer&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;metadata&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;cloudflare-letsencrypt-issuer&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;spec&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;acme&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;email&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&amp;lt;your-mail@example.com&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;server&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;https://acme-v02.api.letsencrypt.org/directory&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;privateKeySecretRef&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+      &lt;span class=&quot;c1&quot;&gt;# Secret resource that will be used to store the account&apos;s private key.&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;cloudflare-letsencrypt-issuer-account-key&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;solvers&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;dns01&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;cloudflare&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+          &lt;span class=&quot;na&quot;&gt;email&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&amp;lt;your-mail@example.com&amp;gt;&lt;/span&gt;
+          &lt;span class=&quot;na&quot;&gt;apiTokenSecretRef&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+            &lt;span class=&quot;c1&quot;&gt;# Name of the secret created on the other resource&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;cloudflare-api-token-secret&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;key&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;api-token&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/figure&gt;
+
+&lt;p&gt;The resources above needs &lt;em&gt;Cert Manager&lt;/em&gt; to be configured already, and once applied we can move to the next step, that is telling our ingress to use this new &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ClusterIssuer&lt;/code&gt;.&lt;/p&gt;
+
+&lt;h1 id=&quot;ingress-resource&quot;&gt;Ingress Resource&lt;/h1&gt;
+
+&lt;p&gt;I’ll give here the example of how my grafana ingress came out, commenting above the important lines.&lt;/p&gt;
+
+&lt;figure class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;language-yaml&quot; data-lang=&quot;yaml&quot;&gt;&lt;span class=&quot;na&quot;&gt;apiVersion&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;networking.k8s.io/v1&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;kind&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Ingress&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;metadata&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;annotations&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;c1&quot;&gt;# Tells Cert Manager to generate a certificate using our configured ClusterIssuer&lt;/span&gt;
+    &lt;span class=&quot;s&quot;&gt;cert-manager.io/cluster-issuer&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;cloudflare-letsencrypt-issuer&lt;/span&gt;
+    &lt;span class=&quot;s&quot;&gt;nginx.ingress.kubernetes.io/auth-realm&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Authentication Required&lt;/span&gt;
+    &lt;span class=&quot;s&quot;&gt;nginx.ingress.kubernetes.io/auth-secret&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;basic-auth&lt;/span&gt;
+    &lt;span class=&quot;s&quot;&gt;nginx.ingress.kubernetes.io/auth-type&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;basic&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;grafana&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;namespace&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;monitoring&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;spec&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;rules&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;host&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;grafana.homelab.cadumillani.com.br&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;http&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;paths&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;backend&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+          &lt;span class=&quot;na&quot;&gt;service&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;grafana&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;port&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+              &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;http&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;path&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;/&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;pathType&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Prefix&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;tls&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;hosts&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;grafana.homelab.cadumillani.com.br&lt;/span&gt;
+    &lt;span class=&quot;c1&quot;&gt;# Secret that Cert Manager will create with certificate&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;secretName&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;homelab-grafana-ingress-le-cert&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/figure&gt;
+
+&lt;p&gt;Basically, using the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;cert-manager.io/cluster-issuer&lt;/code&gt; annotation we tell Cert Manager that we want it to use the given &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ClusterIssuer&lt;/code&gt; to issue a certificate, and it uses the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;tls&lt;/code&gt; section of the &lt;em&gt;yaml&lt;/em&gt; to know which domain to issue to certificate to, and where to store it after it’s generated.&lt;/p&gt;
+
+&lt;h1 id=&quot;conclusion&quot;&gt;Conclusion&lt;/h1&gt;
+
+&lt;p&gt;I was expecting the configuration of the DNS01 challenge to give me much more trouble, I’m really impressed of how smooth that went, given &lt;em&gt;Cert Manager&lt;/em&gt; and an &lt;em&gt;Ingress Controller&lt;/em&gt; already configured.&lt;/p&gt;
+
+&lt;p&gt;It is a challenge to administrate a kubernetes cluster, and there is a long way before I can say comfortably that I know how to do that, but this kind of integration makes the effort seems kinda worth it!&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/lets-encrypt-on-k8s/encrypted-grafana.png&quot; alt=&quot;Trusted Certificate on grafana&quot; /&gt;&lt;/p&gt;</content><author><name></name></author><category term="personal" /><summary type="html">I’ve been using self signed certificates for a while, but safari started complaining about them with no simple option to simply trust the certificated as I had before. So, I decided to work on something I’ve been postponing for a while: using let’s encrypt to generate trusted certificates.</summary></entry><entry><title type="html">so, I’m creating a blog</title><link href="http://localhost:4000/kubernetes/2021/07/18/hello-world.html" rel="alternate" type="text/html" title="so, I’m creating a blog" /><published>2021-07-18T19:05:00-03:00</published><updated>2021-07-18T19:05:00-03:00</updated><id>http://localhost:4000/kubernetes/2021/07/18/hello-world</id><content type="html" xml:base="http://localhost:4000/kubernetes/2021/07/18/hello-world.html">&lt;p&gt;For a while now I wanted a place where I could share some of my experiments and studies.&lt;/p&gt;
 
 &lt;p&gt;Since 2020 I’ve started a &lt;a href=&quot;https://www.reddit.com/r/homelab/&quot;&gt;homelab&lt;/a&gt; (link to the reddit community, where I got many ideas), and from then on I worked on a few projects.&lt;/p&gt;
 
