@@ -3,6 +3,7 @@ layout: post
 title:  "integrating kvm with the home app - vmsm on k8s"
 date:   2021-08-07 12:05:00 -0300
 categories: homelab
+image: /assets/integrating-kvm-apple-home/vfio-ha.jpeg
 tags: ["kvm", "homeassistant", "kubernetes"]
 ---
 _(Code available at [github](https://github.com/cmillani/vmsm))_
