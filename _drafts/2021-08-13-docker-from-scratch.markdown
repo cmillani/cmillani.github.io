@@ -83,4 +83,6 @@ https://www.tutorialworks.com/difference-docker-containerd-runc-crio-oci/
 
 cgroups
 user namespaces
-chroot
+    sudo lsns
+    ps --forest -o pid=,tty=,stat=,time=,cmd= -g 25086
+    ex com nginx, ex com alpinechroot
