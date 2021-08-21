@@ -1,11 +1,13 @@
 ---
 layout: post
-title:  "docker from scratch"
-date:   2021-08-13 19:05:00 -0300
+title:  "docker from scratch: understanding how docker, dockerd, containerd and runc works together"
+date:   2021-08-21 11:05:00 -0300
 categories: container
 ---
 
-I've always used a `FROM _base_image_` on my docker images, and I started wondering how those base images were created. This lead me to a rabbit hole of how containers work and the isolation gained by using them. I'll share my journey in this post!
+I've always used a `FROM _base_image_` on my docker images, and I started wondering how those base images were created. This lead me to a rabbit hole of how containers work and the isolation gained by using them. 
+
+In this post we will see a little bit about what is inside a container and how to create some pretty simple ones without using base images (or even `docker build`). Then, we start a journey to understand all projects that take part from when you run `docker run` until the container is up and running.
 
 ## Creating a Hello World
 
@@ -34,7 +36,7 @@ DYNAMIC SYMBOL TABLE:
 0000000000000000  w   DF *UND*	0000000000000000  GLIBC_2.2.5 __cxa_finalize
 ```
 
-I have a call to `printf` on my code, so the implementation of `libc` available on my system is linked, and since I am using debian, that is [glibc](https://www.gnu.org/software/libc/). If I compile the same code on [Alpine](https://wiki.alpinelinux.org/wiki/Main_Page), that uses [musl](https://musl.libc.org), my static binary will have _83kB_, close to 10% it was with `glibc`. I've heard before that `musl` was supposed to be lighter (but not complete), so I wanted to do a quick test, but this is a subject for another deep dive. The point here is: to build the docker image we need to pack everything, so `-static` is used in this example. 
+I have a call to `printf` on my code, so the implementation of `libc` available on my system is linked, and since I am using debian, that is [glibc](https://www.gnu.org/software/libc/). If I compile the same code on [Alpine](https://wiki.alpinelinux.org/wiki/Main_Page), that uses [musl](https://musl.libc.org), my static binary will have _83kB_, close to 10% it was with `glibc`. I've heard before that `musl` was supposed to be lighter (but not complete), so I wanted to do a quick test, but this is a subject for another post. The point here is: to build the docker image we need to pack everything, so `-static` is used in this example. 
 
 The [docker hello world image](https://hub.docker.com/_/hello-world) avoid linking `libc` by directly calling the _syscall_:
 ```c
@@ -51,7 +53,7 @@ CMD ["/hello"]
 
 And running `sudo docker images` indicates that the image has the same size of the binary we saw above (756Kb). If we use `docker save` to generate a `tar` for our image and extract this file, we can see our compiled "hello" binary (and also some metadata).
 
-Another way to create this image is simply importing a tar. Using the command from the docker page about base images, we write 
+Another way to create this image is simply importing a tar. Using the command from the docker page about base images, we write:
 ```sh
 sudo tar -C bin -c . | docker import - hellotar
 ```
@@ -88,7 +90,7 @@ First of all, let's understand a little bit better what is going on. We just use
 From the [Docker website](https://www.docker.com/resources/what-container) "containers virtualize the operating system instead of hardware", so the kernel is shared, and that is why we are able to run a single simple hello world binary on a container. That would be much harder on a VM. Docker provides a layer just above [containerd](https://containerd.io), that is a container runtime. There are some other, kubernetes for example supports [this list](https://kubernetes.io/docs/setup/production-environment/container-runtimes/).
 
 # Containerd and runc
-Containerd uses runc, that implements the [OCI specification](https://opencontainers.org), to actually run each container. The files we received as error when trying to run without linking or running something not present are defined in this repository, [container_linux.go here](https://github.com/opencontainers/runc/blob/master/libcontainer/container_linux.go) and [standard_init_linux.go here](https://github.com/opencontainers/runc/blob/master/libcontainer/standard_init_linux.go).
+Containerd uses runc, that implements the [OCI specification](https://opencontainers.org), to actually run each container. The files we received as error when trying to run without linking or running something not present are defined in this repository, [container_linux.go here](https://github.com/opencontainers/runc/blob/v1.0.1/libcontainer/container_linux.go) and [standard_init_linux.go here](https://github.com/opencontainers/runc/blob/v1.0.1/libcontainer/standard_init_linux.go) (attention to the tag used, so the code lines will match the ones in our error message).
 
 # The code that triggered the errors above.
 
@@ -98,7 +100,7 @@ if err := system.Exec(name, l.config.Args[0:], os.Environ()); err != nil {
     return newSystemErrorWithCause(err, "exec user process")
 }
 ```
-Here, system is a package inside `runc`, and the `Exec` function is defined [here](https://github.com/opencontainers/runc/blob/v1.0.1/libcontainer/system/linux.go#L41). Diving to this function, it calls `unix.Exec`, where `unix` is from the `sys/unix` go package, and the exec method simply replaces the current process with the target one. Since we received this error when trying to execute a dynamically linked binary where the needed libraries were not present, it fails with a 127 return, that means that "command not found". Since the dynamic library is not present, it makes sense.
+Here, system is a package inside `runc`, and the `Exec` function is defined [here](https://github.com/opencontainers/runc/blob/v1.0.1/libcontainer/system/linux.go#L41). Diving to this function, it calls `unix.Exec`, where `unix` is from the `sys/unix` go package, and the exec method simply replaces the current process with the target one. Since we received this error when trying to execute a dynamically linked binary where the needed libraries were not present, it fails with a 127 return, that means that "command not found".
 
 On __container_linux.go__ the code present is this:
 
@@ -115,14 +117,14 @@ Both methods drill down to a similar problem, that is some kind of `exec` being 
 docker: Error response from daemon: OCI runtime create failed: container_linux.go:380: starting container process caused: exec: "ls": executable file not found in $PATH: unknown.
 ERRO[0000] error waiting for container: context canceled
 ```
-which makes sense, since there is no `ls` binary to be found, but that makes me wonder which roles does __container_linux__ and __standard_init_linux__ plays. 
+That makes me wonder which roles does __container_linux__ and __standard_init_linux__ plays. 
 
 Following references from __standard_init_linux__ leads us to the definition of the `initCommand`, that is exposed to the `runc` CLI with the following documentation:
 ```
 init        initialize the namespaces and launch the process (do not call it outside of runc)
 ```
 
-Calling `runc init` on bash has no effect because, as the docs says, we need to call inside a `runc` context, and we can see on `init.go` that it expects a `_LIBCONTAINER_LOGLEVEL` environment variable to be defined. This is where things starts to connect, searching where this variable is defined lead me to `container_linux.go`, [at method `commandTemplate`](https://github.com/opencontainers/runc/blob/v1.0.1/libcontainer/container_linux.go#L528). This a a method from the same `linuxContainer` struct, and it is called on `newParentProcess`. 
+Calling `runc init` on bash has no effect because, as the docs says, we need to call inside a `runc` context, and we can see on `init.go` that it expects a `_LIBCONTAINER_LOGLEVEL` environment variable to be defined, for example. This is where things starts to connect, searching where this variable is defined lead me to `container_linux.go`, [at method `commandTemplate`](https://github.com/opencontainers/runc/blob/v1.0.1/libcontainer/container_linux.go#L528). This a a method from the same `linuxContainer` struct, and it is called on `newParentProcess`. 
 
 Calls to `start` method on `container_linux` can come from some CLI calls:
 ```
@@ -134,9 +136,7 @@ run         create and run a container
 
 Ok, so `standard_init_linux` is called after `container_linux`, but what are the roles they play here? From our experiments, we received an error on `standard_init_linux` when the binary was not present, and on `container_linux` for cases where it was not even possible to start our binary. 
 
-We will continue studying `runc`, but before, to give a little more understanding about the errors we just faced, it seems that when we write `RUN ls` on `dockerfile` the engine tries to start a `sh` process inside the container to run our command, but since there is no `sh` there, it fails. When we try to start the binary without the needed dynamic library it is able to start, but fails soon. The same happens when we try to `CMD ['ls']`: there is no such binary in our container, so it does not even starts executing.
-
-Let's study a lit bit more about `runc`.
+Let's study a lit bit more about `runc` before we explore what in the `runc` code makes the errors different.
 
 # Diving into runc
 
@@ -171,7 +171,7 @@ and the output of "hello" image printed on the terminal running `recvtty`.
 There is out `runc init`! What happens is, the isolation of a container is obtained by using a list of kernel features, such as namespaces, cgroups and LSMs, and you can read more about that [here](https://www.capitalone.com/tech/cloud/container-runtime/). This achieves our isolation, and the way `runc` works, it creates the isolated container and starts a process `runc init` inside it, that is replaced by our command when we execute `runc start`. `init` act as a placeholder while start is not called.
 
 ![runc execution flow](/assets/docker-from-scratch/runc_init.jpg)
-Image from [unit42.paloaltonetworks.com](https://unit42.paloaltonetworks.com/breaking-docker-via-runc-explaining-cve-2019-5736)
+Image from [unit42.paloaltonetworks.com](https://unit42.paloaltonetworks.com/breaking-docker-via-runc-explaining-cve-2019-5736).
 The post linked above helped me understand better the inner workings of runc.
 
 There are a lot of interesting things going on here, the `config.json` generated by `runc spec` has a lot of information! I want to study more about that later :)
@@ -208,7 +208,7 @@ docker.txt.13457:connect(7, {sa_family=AF_UNIX, sun_path="/var/run/docker.sock"}
 ```
 
 Here we can see docker communicating with [dockerd through a unix domain socket](https://docs.docker.com/engine/reference/commandline/dockerd/#daemon-socket-option).
-(Note: each output will be different, the getaway here is that those threads are opening `docker.sock` to communicate with `dockerd`)
+(Note: each output will be different, the point here is that those threads are opening `docker.sock` to communicate with `dockerd`)
 
 
 # Dockerd to containerd
@@ -233,12 +233,16 @@ dockerd.txt.15864:write(10, "\0\0\10\6\1\0\0\0\0\2\4\20\20\t\16\7\7\0\0\4\10\0\0
 dockerd.txt.15864:write(10, "\0\0\10\1\4\0\0\0\211\203\206\315\323\322\321\320\317\0\0G\0\1\0\0\0\211\0\0\0\0B\n@056f171aa8aaf7e32871c732f3bb98f44047ec34bb69744"..., 97) = 97
 ```
 
-If we search the string `056f171aa8aaf7e32871c732f3bb98f44047ec34bb69744` present above in the `syscalls` log generated by `strace` we can find it appears many times on the path `/var/lib/docker/containers/056f171aa8aaf7e32`, and if we run `sudo docker ps -a --filter "id=056f171aa8aaf7e32871c732f3bb98f44047ec34bb69744"` we can find our hello container with this ID there:
+If we search the string `056f171aa8aaf7e32871c732f3bb98f44047ec34bb69744` present above in the `syscalls` log generated by `strace` we can find it appears many times on the path `/var/lib/docker/containers/056f171aa8aaf7e32`. 
+
+If we run `sudo docker ps -a --filter "id=056f171aa8aaf7e32871c732f3bb98f44047ec34bb69744"` we can find our hello container with this ID there:
 
 ```
 CONTAINER ID   IMAGE     COMMAND     CREATED       STATUS                   PORTS     NAMES
 056f171aa8aa   hello     "./hello"   2 hours ago   Exited (0) 2 hours ago             loving_mccarthy
 ```
+
+Tracing `dockerd` communications with `containerd` was a little bit tricky, but with the help of `lsof` and some poking around it was possible to connect the dots.
 
 The meaning of the text we saw on the `write` calls is out of scope here, I imagine that on those first calls to write `dockerd` is instructing `containerd` to create a container with the given `ID`, but we should check that on the docs.
 
@@ -263,7 +267,7 @@ In the end, there is one more step to out flow above:
 
 ## So why are the errors different?
 
-Now, lets use all this tooling that we got to know to test two more cases. We were able to create and run a container using `runc`, now let's change the `config.js` from the successful export we did to run something else, and then, let's also export a version of the image with dynamic link to `libc`.
+Now, lets use all this tooling that we got to know to get to the bottom of the errors we got before. We were able to create and run a container using `runc`, let's change the `config.js` to start `ls` instead of `/hello` and trace the error from there.
 
 # Running non present binary
 Running and tracing gives us the following output, as expected:
@@ -272,7 +276,7 @@ $ sudo strace -s 120 -ff -o runc.txt runc run hellols
 ERRO[0000] container_linux.go:380: starting container process caused: exec: "ls": executable file not found in $PATH 
 ```
 
-So `container_linux` appears again, now lets look into the trace. As we can see below, on one thread init is called with success, but on other we see that it was not possible to locate the executable `ls`.
+So `container_linux` appears again, now lets look into the trace. As we can see below, on one thread `runc init` is called with success, but on other we see that it was not possible to locate the executable `ls`.
 
 ```
 runc.txt.18743:execve("/proc/self/exe", ["runc", "init"], 0xc0002ae000 /* 8 vars */) = 0
@@ -283,9 +287,9 @@ runc.txt.18738:read(9, "{\"Timestamp\":\"2021-08-15T19:13:07.442446078Z\",\"ECod
 
 Ok, what is this file descriptor 9?
 
-Running strace again with `-yy` to bring more information about file descriptor.
+Running strace again with `-yy` to bring more information about file descriptor (you may need to delete the old container `hellols` we used above, or use another name).
 ```sh
-$ sudo strace -yy -s 120 -ff -o runc_fd.txt runc run hellols2
+$ sudo strace -yy -s 120 -ff -o runc_fd.txt runc run hellols
 ```
 With this we get some more details about `fd` number 9:
 ```
@@ -340,10 +344,12 @@ if err != nil {
 `Runc` outsmarts me by looking for my binary before actually trying to execute it, that is why the last `execve` is not called, and that is why the line reported is different.
 That was a long run to understand why both commands gave different errors, and the reason behind is pretty reasonable, the runtime check before trying to start a binary that does not exist, and fails early.
 
+The failure of the dynamic linked binary is an interesting one because `execve` returns a failure, so the binary `hello` is not even started. From a quick search it seems that it has to do with the way the dynamic linker and the kernel works, and since our container does not have `libc` but also does not have the linker, it must not even be capable of loading `hello`. But this is a subject for another post :)
+
 
 ## Conclusion
-My initial intention was to build a base image with [LFS](http://www.linuxfromscratch.org), but after understanding a little bit more about the way containers are isolated I saw it did not make much sense. Since there is no "boot", we miss the fun part of LFS that is seeing your kernel come to life. Here we would be simply building a very light "toolkit", and without a package manager. 
+My initial intention was to build a base image with [LFS](http://www.linuxfromscratch.org), but after understanding a little bit more about the way containers are isolated I saw it did not make much sense. Since there is no "boot", we miss the fun part of LFS that is seeing your kernel come to life. Here we would be simply building a very light "toolkit".
 
-I've always heard about how containers isolation was different and lighter than VMs, but trying to create a base image and poking around really helped me learn more! 
+I've always heard about how containers isolation was different and lighter than VMs, but trying to create a base image and poking around really helped me learn more, not only about containers but also about linux. All the tooling used to inspect calls between `docker` up to `runc` was very interesting. 
 
 I'm curious now about how namespaces, selinux and cgroups works, I'll investigate and post some more poking around linux here soon!
