@@ -191,11 +191,11 @@ index c952736..e5ce8e2 100644
    - name: reload
    - name: loadbalance
 +  - name: etcd
-+    parameters: example.org
++    parameters: homelab.cadumillani.com.br
 +    configBlock: |-
 +      stubzones
 +      path /skydns
-+      endpoint http://10.105.68.165:2379
++      endpoint http://10.103.39.133:2379
  
  # Complete example with all the options:
  # - zones:                 # the `zones` block can be left out entirely, defaults to "."
@@ -248,7 +248,7 @@ As we see from the **answer** section, CoreDNS was able to resolve successfully!
 
 ## Adding external dns
 
-This last piece was the easiest one. The tutorial has a sample manifest, all I had to do was change the namespace to the one I created, and the IP of `ETCD_URLS` to the one of my instance of `etcd` (the `yaml` bellow only differs on the IP address from the one in the tutorial, I'll still post it here as reference):
+This last piece was the easiest one. The tutorial has a sample manifest, all I had to do was change the namespace to the one I created, the IP of `ETCD_URLS` to the one of my instance of `etcd`, and the version of `external-dns` to the latest at the time:
 
 ```yaml
 ---
@@ -305,7 +305,7 @@ spec:
       serviceAccountName: external-dns
       containers:
       - name: external-dns
-        image: k8s.gcr.io/external-dns/external-dns:v0.7.6
+        image: k8s.gcr.io/external-dns/external-dns:v0.9.0
         args:
         - --source=ingress
         - --provider=coredns
@@ -359,8 +359,14 @@ time="2021-09-25T22:28:00Z" level=debug msg="Removing duplicate endpoint vmsm.ho
 
 That probably is related to the way the `CoreDNS` Provider is designed, and since it is in **alpha**, this could be a place to improve (maybe I'll adventure myself with that?).
 
-# Conclusions 
+## Conclusions 
 
 Now, with one `deployment`, `service` and `ingress` resource for an application I can just apply it and access the application right away (given that I am using CoreDNS as the DNS server on my computer).
 
 The ingress triggers both `cert-manager`, [that creates a valid certificate]({% post_url 2021-07-18-lets-encrypt-on-k8s %}), and `external-dns`, that generates an **A** DNS record on `CoreDNS`. Within a few seconds my new service is up and running, and can be accessed from any browser (well, im my case, any browser running in a computer in my LAN).
+
+## Edits:
+
+Well, turns out that I got the configuration wrong at first, and just noticed when introducing a new service. When I tried resolving one of my preexisting services the recursive response from my router (which had a static route) was the one I was getting. Two additional changes (already edited above) were needed:
+* First, I simply misconfigured the `etcd` section on the `CoreDNS` yaml
+* And also, I needed to add `--publish-service=ingress-nginx/ingress-nginx-controller` to my `nginx` ingress controller, that setups the correct IP on the ingress resources
