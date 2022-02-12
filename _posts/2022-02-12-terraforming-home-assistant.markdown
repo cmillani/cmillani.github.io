@@ -1,12 +1,12 @@
 ---
 layout: post
 title:  "provisioning home assistant with terraform and ansible"
-date:   2021-12-18 19:05:00 -0300
+date:   2022-02-12 17:05:00 -0300
 categories: infra
 tags: ["terraform", "ansible", "homeassistant", "cloud-init", "debian"]
 ---
 
-Earlier this month my [home assistant](https://www.home-assistant.io) installation broke. During an auto-update something went wrong and the system was left in a state where I could not bring that back. I am using Home Assistant Supervised on a Debian VM, and there are [some warnings](https://www.home-assistant.io/installation/linux#install-home-assistant-supervised) about this kind of setup.
+Earlier this month my [home assistant](https://www.home-assistant.io) installation broke. During an auto-update something went wrong and the system was left in a state where I could not bring it back. I am using Home Assistant Supervised on a Debian VM, and there are [some warnings](https://www.home-assistant.io/installation/linux#install-home-assistant-supervised) about this kind of setup.
 
 Well, after some attempts to bring the service back to life I decided to take this as an opportunity to learn a little bit of some automation tools. On the next session I'll describe which tools and why, and then the steps I used to provision my instance of Home Assistant.
 
@@ -177,7 +177,7 @@ tmpfs              48696      0     48696   0% /run/user/1000
 
 Now, I only need to be able to access this VM from my whole LAN and also to be able to `SSH` into it. Until now I was letting the hypervisor assign an IP, which was only accessible from within the Host, and I manually setup a password inside my `cloud_init.cfg` using the [`chpasswd` module](https://cloudinit.readthedocs.io/en/latest/topics/modules.html#set-passwords).
 
-For the `SSH` part I will modify our template a little so we can read the `id_rsa.pub` from my machine inside the `cloud_init.cfg`. The documentation around those tools are really helping. Searching template for _terraform template_ leads me to [this page](https://www.terraform.io/docs/language/functions/templatefile.html), and with this I can also replace the `template_file` resources, following [the recomendation](https://registry.terraform.io/providers/hashicorp/template/latest/docs/data-sources/file).
+For the `SSH` part I will modify our template a little so we can read the `id_rsa.pub` from my machine inside the `cloud_init.cfg`. The documentation around those tools are really helping. Searching for _terraform template_ leads me to [this page](https://www.terraform.io/docs/language/functions/templatefile.html), and with this I can also replace the `template_file` resources, following [the recomendation](https://registry.terraform.io/providers/hashicorp/template/latest/docs/data-sources/file).
 
 The changes to the `terraform` file looked like:
 
@@ -230,7 +230,7 @@ I was seeing something like this:
 
 Fortunately, I found the `hyphen` difference (by accident) before going through the `write_files` route, simply copying the files manually.
 
-Other configuration that was tackled with `cloud_init` was setting the default IP. Currently, I bridge the host network to the guests, and I wanted to have a predefined IP configured, so it would be easier to follow up with commands. This required a change to a part of `cloud_init`'s configuration and `libvirt_domain`'s `network_interface`.
+Other configuration that was tackled with `cloud_init` was setting the default IP. Currently I bridge the host network to the guests, and I wanted to have a predefined IP configured. This required a change to a part of `cloud_init`'s configuration and `libvirt_domain`'s `network_interface`.
 
 Thankfully, on terraform script I just had to change the `network_interface` to:
 ```tf
@@ -260,7 +260,7 @@ packages:
   - network-manager
 ```
 
-With the VM up and running, the the desired configurations, let's install Home Assistant with Ansible.
+With the VM up and running with the desired configurations, let's install Home Assistant with Ansible.
 
 ## Bootstrapping Home Assistant with Ansible
 
@@ -279,7 +279,7 @@ $ ansible all -m ping
 }
 ```
 
-The `python` path was needed since ansible was trying to use python, which was not defined (ok, later I discovered that this is not an issue on newer ansible versions). Following Home Assistant Supervised [installation instructions](https://www.home-assistant.io/installation/linux#install-home-assistant-supervised) I started defining the playbook.
+The `ansible_python_interpreter` parameter was needed on `/etc/ansible/hosts` since ansible was trying to use `python`, and only `python3` was defined (ok, later I discovered that this is not an issue on newer ansible versions). Following Home Assistant Supervised [installation instructions](https://www.home-assistant.io/installation/linux#install-home-assistant-supervised) I started defining the playbook.
 
 During the process, I had to programmatically retrieve the url of the last version of a github package, [this blog post](https://gist.github.com/steinwaywhw/a4cd19cda655b8249d908261a62687f8) helped me achieve an one-liner to download:
 ```
@@ -363,14 +363,18 @@ All other tasks are simply installing dependencies.
 
 ## Restoring the backup
 
-I do not have any backup system (bad, yeah :/) but I was able to retrieve some basic configurations files to save me from the trouble. Once I build some decent backup mechanism this step will probably change, but for now, a simple `rsync` is enough, so I added:
+I do not have any backup system (bad, yeah :/) but I was able to retrieve some basic configurations files from the broken server to save me from the trouble. I ran the ansible defined above, copied the configuration files into the new server and manually finished setup, with that I had a working home assistant again. 
 
-```
-- name: Restore HA Backup
+There is a [`cli` tool](https://www.home-assistant.io/common-tasks/os/#creating-backup-using-the-home-assistant-command-line-interface) that handles backups on Home Assistant, so I went and run `ha backups new` to generate a backup from my just created and restored server. With that, I could use `ha backups restore` to restore to this backup, and I added this to my script to copy the backup and restore the server (for now, I had to manually place the backup _tar_ file on the machine where ansible is running):
+
+```yaml
+- name: Synchronization of src on the control machine to dest on the remote hosts
   synchronize:
-    src: /home/carlos/backups/homeassistant
-    dest: /usr/share/hassio/
-    recursive: yes
+    src: /home/carlos/backups/111cfc64.tar
+    dest: /usr/share/hassio/backup
+- name: Restore backup
+  ansible.builtin.shell:
+    cmd: ha backups reload && ha backups restore 111cfc64
 ```
 
 ## Bringing Terraform and Ansible together
@@ -404,10 +408,8 @@ provisioner "local-exec" {
 }
 ```
 
-When trying to install _apt_ packages right after booting for the first time I was stumbling upon a locked apt. There is a `lock_timeout` parameter configured, but it seems to miss `/var/lib/dpkg/lock-frontend`, which is locked when it runs. There are workarounds that suggest looking for _cloud-init_ messages at the journal (which is too specific), and it seems like a bug on `lock_timeout`. Looking at the code, it checks for a `LockFailedException` on [python-apt](https://launchpad.net/python-apt/), but for some reason, it does not appear to be working. I looked around a little bit around the package's code and debian's open bugs, but no relevant information was there, so for now I'll be going around this. Maybe my next blog post will be a little more about apt's lock mechanism :)
+When trying to install _apt_ packages right after booting for the first time I was stumbling upon a locked apt. There is a `lock_timeout` parameter [created for this](https://github.com/ansible/ansible/issues/25414#issuecomment-963230921), but it seems to miss `/var/lib/dpkg/lock-frontend`, which is locked when it runs. There are workarounds that suggest looking for _cloud-init_ messages at the journal (which is too specific), and it seems like a bug on `lock_timeout`. Looking at the code, it checks for a `LockFailedException` on [python-apt](https://launchpad.net/python-apt/), but for some reason, it does not appear to be working. I looked around a little bit around the package's code and debian's open bugs, but no relevant information was there, so for now I'll be going around this. Maybe my next blog post will be a little more about apt's lock mechanism :)
 
-
-https://github.com/ansible/ansible/issues/25414#issuecomment-963230921
 So this other task was added:
 
 ```yaml
@@ -418,7 +420,7 @@ So this other task was added:
     - lock-frontend
 ```
 
-Did not work. New attempt, following example https://docs.ansible.com/ansible/latest/collections/community/general/cloud_init_data_facts_module.html#examples:
+Did not work. New attempt, following [this example](https://docs.ansible.com/ansible/latest/collections/community/general/cloud_init_data_facts_module.html#examples:)
 
 ```yaml
 - name: Wait for cloud init to finish
@@ -430,7 +432,7 @@ Did not work. New attempt, following example https://docs.ansible.com/ansible/la
   delay: 5
 ```
 
-Also not reliable - worked once, failed another time. I could not find the documentation to the output of `cloud_init_data_facts`, so I tried yet another route: cloud init has a `cli` with a status command that has a _wait_ parameter that, according to docs, will block until completion. That allied with a hardcoded check (not ideal, but as a first version of this script will be enough), allowed a more reliable wait (as far as I could tell):
+Also not reliable - worked once, failed another time. I could not find the documentation to the output of `cloud_init_data_facts`, so I tried yet another route: cloud init has a `cli` with a status command that has a _wait_ parameter that, according to docs, will block until completion. That allied with a hardcoded check on the output (not ideal, but as a first version of this script will be enough), allowed a more reliable wait (as far as I could tell):
 
 ```yaml
 - name: Wait cloud init success
@@ -440,9 +442,11 @@ Also not reliable - worked once, failed another time. I could not find the docum
   failed_when: '"status: done" not in cinitres.stdout'
 ```
 
+Well, packages are installing!
+
 # Finally, restoring
 
-With a newly created HomeAssistant instance, I now need to restore backup somehow. There is a [`cli` tool](https://www.home-assistant.io/common-tasks/os/#creating-backup-using-the-home-assistant-command-line-interface) that handles that, so I went in this direction. Once again, I run into some timing problems: I needed to wait until _homeassistant_ started before trying to restore. CLI command `backups` failed saying a needed container was not running, so my solution was to repeat that command until I received a status code _0_, and then restored backup:
+Well, from creating the VM to a running service I was able to automate using _Terraform_ and _Ansible_, the last step to provide the whole deal was restoring the backup. Running the `ha backups` scripts I defined above immediatelly gave me an error: the services for home assistant were not up yet. My simple solution was to run the same script until I received a status code _0_, and only then restoring. The following was added:
 
 > Important, I needed to wait before copying the backup too, or else _supervisor_ would detect the _backup_ folder and fail startup
 
@@ -454,22 +458,21 @@ With a newly created HomeAssistant instance, I now need to restore backup someho
   until: ha_cli_status is success
   delay: 10
   retries: 300
-- name: Synchronization of src on the control machine to dest on the remote hosts
-  synchronize:
-    src: /home/carlos/backups/111cfc64.tar
-    dest: /usr/share/hassio/backup
-- name: Restore backup
-  ansible.builtin.shell:
-    cmd: ha backups reload && ha backups restore 111cfc64
 ```
 
 And done! Whole thing took 7 minutes to run, and now I can wipe the VM clean and start again anytime, but more important, this is the base to expand IaC to other services on my homelab.
 
 ## Conclusion
-20hours to save 30 minutes, yay!
+
+20+ hours to save 30 minutes, yay!
+
+All scripts are available [here](https://github.com/cmillani/homelab_iac/tree/09756e04320c4a4f77a7a9a649a23c6e1139470b). Mind that this link points to a fixed commit so that it makes sense with this text, but there may be newer things on `main` as I evolve my automations.
+
+
 But built up knowledge to automate setup of other tasks I intend to.
 
 
-## Summing Up
-Terraform -> KVM + CloudInit to bootstrap a debian with configured network and ssh
-Ansible called from terraform, with proper waits in place and then installs everything and restores backup
+# Summing Up
+With **Terraform** I could setup my infrastructure using **qemu+kvm**, and with the help of **cloud-init** configure SSH and networking, giving a working VM. **Ansible** is called at the end o the `tf` script, and with proper waits in place it installs and configures everything, restoring the backup at the end. 
+
+The biggest lesson for me during this experiment was starting to think about the *waits* needed: _cloud-init_ and _home assistant_ took some time running in the background, and checking if they finished running was different than what I was used too. There were no `mutexes` or `semaphores`, or even higher level `promisses` or `asyncs`: some other process started a service that was triggering a series of changes, and each one had its way to determine when it was ready. I deemed it more challenging than simply handling multiple threads on the same program, and it was a fun new way to think :)
