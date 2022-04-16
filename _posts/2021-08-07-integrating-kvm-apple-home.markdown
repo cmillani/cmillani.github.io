@@ -191,6 +191,8 @@ spec:
 
 It uses the previous configured `cert-manager` (I wrote about it [here]({% post_url 2021-07-18-lets-encrypt-on-k8s %})), and a `PersistantVolume` I configured with `NFS` like the following:
 
+> See [Updates](#updates) section at the end for a better way to mount the key
+
 ```yaml
 apiVersion: v1
 kind: PersistentVolume
@@ -240,3 +242,40 @@ There are some points that could be improved:
 * It is not "resource-smart": if other VMs share the same hardware (i.e. gpu passthrough), turning on the gaming VM will fail
 
 But it is really really good to call Siri to turn my VM on!
+
+## Updates
+
+No longer using a PV (finally :D)!
+
+By creating a secret with a base64 encoded private key
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  namespace: vmsm
+  name: vmsm-ssh-secret
+type: kubernetes.io/ssh-auth
+data:
+  id-rsa: BASE-64-PRIVATE-KEY
+```
+
+and changing the way we mount the volume (both parts of the `Deployment` resource):
+
+First set to use data from the secret, and configure only READ permissions (mode 0400), needed by ssh
+
+```yaml
+      volumes:
+        - name: vmsm-ssh
+          secret:
+            secretName: vmsm-ssh-secret
+            defaultMode: 0400 
+```
+and added readOnly to the volume mount
+```yaml
+        volumeMounts:
+        - mountPath: "/ssh"
+          readOnly: true
+          name: vmsm-ssh
+```
+
+we are able to insert the secret into the right path without the complexity of configuring a PV and PVC.
