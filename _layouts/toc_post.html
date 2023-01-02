@@ -1,0 +1,12 @@
+---
+layout: post
+---
+
+<link rel="stylesheet" href="/assets/css/styles.css">
+
+<div class="posttoc">
+<h4>what we got here</h4>
+{% include toc.html html=content %}
+</div>
+
+{% include anchor_headings.html html=content anchorBody="#" beforeHeading=true %}

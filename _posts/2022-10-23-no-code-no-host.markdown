@@ -10,11 +10,10 @@ If the best code is [no code](https://github.com/kelseyhightower/nocode), the be
 I've recently started studying OS optimizations such as Unikernels and Lightweight kernels for my master's degree and it changed a little bit the way I see the benefits of PaaS/SaaS/*aaS products.
 
 In this text I'll briefly talk about the most common benefits of using someone else's code and infra, and then I'll dive into what I've learned during my research.
-If you are interested in the Kernel and OS side only, jump to [this section](#the-next-step-in-performance).
 
 # Easiness and maintenance
 
-Products offered as a service come with easiness of setup and maintenance: I usually don't need to care much about OS updates, software updates and, tuning. Besides that, (I hope that) specialists are present to help troubleshoot and configure the systems.
+Products offered as a service come with easiness of setup and maintenance: I usually don't need to care much about OS updates, software updates and tuning. Besides that, (I hope that) specialists are present to help troubleshoot and configure the systems.
 
 Those are the selling points I used to hear, and they alone already sold the services to me. There is so much work and knowledge in keeping everything updated (and thus safer) and configuring to obtain maximum performance, that doing everything in-house would probably be more expensive and yet not achieve the same results.
 
@@ -32,10 +31,10 @@ In HPC clusters the OS is tuned to minimize the OSNoise, removing unnecessary pr
 
 Outside my master's I work as a Software Architect, and that brings us back to *aaS products and the first sentences of the text. In my job I'm closer to the user than to the system, the code me and my team work on needs to solve specific business problems. Operating systems, web servers, and databases are tools to us, not the focus of our job. When I host a broker, a DB, or many other things I'm diverting from my main goal of solving users' problems to learn how to properly set up and maintain those applications, and I'll probably make it worse than if I bought them as a service. 
 
-I spent some weeks searching for optimizations related to the field I'm studying, and learned many things but have yet to find something that has a bigger chance of improving performance in the scenario I'm working on. All those improvements I learned focus on IO or CPU intensive applications and my team is working with GPU intensive workloads. When I found an approach I'm comfortable with I will still have to study and test implementing it in my context, which will have another learning curve. My role as a master's candidate is to do research, and I'm comfortable with the time I'm spending without tangible results, but the situation changes completely on my job: spending months to improve Redis performance would probably not be the best choice when I could buy a service and focus on the product instead.
+I spent some weeks searching for optimizations related to the field I'm studying, and learned many things but have yet to find something that has a bigger chance of improving performance in the scenario I'm working on. All those improvements I learned focus on IO or CPU intensive applications and my team is working with GPU intensive workloads. When I found an approach I'm comfortable with I will still have to study and test implementing it in my context, which will have another learning curve. My role as a master's candidate is to do research, and I'm comfortable with the time I'm spending without tangible results, but the situation changes completely on my job: spending months to improve Redis (for example) performance would probably not be the best choice when I could buy a service and focus on the product instead.
 
-Everything has its place, pros, and cons. You may lose some flexibility with servers you cannot configure, and if you have the in-house knowledge to maintain and tune all the services you need, go for it! But I believe this is mostly not the case. So, if your focus is solving business problems, don't spend time maintaining services that you don't need to. If your focus is learning or researching, then go for it, and teach me what you learn!
+When you are implementing a web service you don't implement your own database engine from scratch, you use one that is available and ready, right? So why should you build your database server from scratch? Buy it as a service and solve your customer's problems fast! Once you reach a point where you need to or it is economically better to run it on-premise, you will probably be facing a good problem, [like dropbox did in 2016](https://news.ycombinator.com/item?id=11282948).
 
-The other way around is true: if you and your company master something, why not sell it to others as a service? Your customers will get a better service and you will make money, the same relation when you buy a database service.
+> Note: this post was edited on December 31 (2022) to add some clarity - feel free to look at the [history](https://www.wired.com/2016/03/epic-story-dropboxs-exodus-amazon-cloud-empire/)
 
 
